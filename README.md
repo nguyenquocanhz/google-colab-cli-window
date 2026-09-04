@@ -13,6 +13,22 @@
 > the client already supports, and gives the `drivemount` consent prompt a
 > `CONIN$` fallback for `/dev/tty`.
 >
+> Later commits fix three more issues found by actually running long jobs from
+> Windows, only the first of which is Windows-specific:
+>
+> - **Console encoding.** Kernel output went straight to `sys.stdout`, so on a
+>   cp1252 console any non-ASCII character in a script's own logging killed the
+>   command with `UnicodeEncodeError` — *after* the VM had finished the work.
+>   Streams are now UTF-8 (`errors="replace"`) before dispatch.
+> - **Session store durability.** `sessions.json` was rewritten in place
+>   (`truncate` then `write`), so a process killed mid-write erased every
+>   session name while the runtimes kept running on the server. It is now
+>   written to a temp file and `os.replace`d into position.
+> - **Orphan recovery.** A runtime whose name is gone could not be released at
+>   all: it still held the quota, so `colab new` failed with "Allocation
+>   refused (precondition failed)". `colab stop --endpoint <endpoint>` now
+>   terminates by the endpoint that `colab sessions` already prints.
+>
 > **Works on Windows:** `new` · `sessions` · `status` · `stop` · `exec` ·
 > `run` · `upload` · `download` · `ls` · `rm` · `install` · `log` · `version`.
 > **POSIX-only by design:** `console` and `repl` interactive raw mode.
