@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import sys
 from typing import Optional
 
 import click
@@ -148,7 +149,33 @@ ssh.register(app)
 utility.register(app)
 
 
+def _force_utf8_streams():
+    """Make stdout/stderr UTF-8 before any command runs.
+
+    Kernel output is arbitrary user text, and `display_output` writes it
+    straight to `sys.stdout`. A Windows console defaults to the ANSI codepage
+    (cp1252 on a Western install), so a single accented character raised
+    `UnicodeEncodeError` and killed the command AFTER the VM had already done
+    the work -- the result was lost to the printer, not to the job. Hit for
+    real: `colab exec` on a script logging Vietnamese died on `ấ`.
+
+    `errors="replace"` is deliberate. Losing one glyph to a placeholder beats
+    losing a whole run, and this path only ever formats output for a human.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        # Not every stream is a TextIOWrapper: pytest's capture objects and
+        # some IDE consoles substitute their own, and those have no
+        # `reconfigure`. Leaving them alone is correct -- they are not the
+        # console codepage that causes this.
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main():
+    _force_utf8_streams()
     app()
 
 
