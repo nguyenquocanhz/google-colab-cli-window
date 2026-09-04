@@ -15,12 +15,21 @@
 import json
 import os
 import sys
-import termios
 from unittest.mock import MagicMock, patch
 
 from colab_cli.console import connect_console, on_message, on_open
 from colab_cli.state import SessionState
 import pytest
+
+# These tests drive the raw-mode terminal path and patch
+# `colab_cli.console.termios` / `.tty` directly. Both are `None` on platforms
+# without a POSIX tty (see `_CO_TTY_POSIX` in `console.py`), so the module is
+# skipped there rather than failing collection for the whole suite -- which is
+# what a bare `import termios` here used to do on Windows.
+# Windows-specific behaviour is covered by `tests/test_windows_compat.py`.
+termios = pytest.importorskip(
+    "termios", reason="raw-mode console tests require a POSIX tty"
+)
 
 
 @pytest.fixture

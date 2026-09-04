@@ -102,8 +102,18 @@ def run_automation(
                 state.history.log_event(s.name, "drive_auth_needed", {"uri": uri})
                 sys.stdout.write("Press Enter after you have granted access... ")
                 sys.stdout.flush()
-                with open("/dev/tty") as tty:
-                    tty.readline()
+                # /dev/tty de doc thang tu terminal dieu khien, khong bi
+                # anh huong khi stdin bi noi ong. Windows khong co no;
+                # CONIN$ la tuong duong, va stdin la duong lui cuoi.
+                for _duong in ("/dev/tty", "CONIN$"):
+                    try:
+                        with open(_duong) as tty:
+                            tty.readline()
+                        break
+                    except OSError:
+                        continue
+                else:
+                    sys.stdin.readline()
 
             typer.echo("[colab] Authorizing VM...")
             params["dryrun"] = "false"

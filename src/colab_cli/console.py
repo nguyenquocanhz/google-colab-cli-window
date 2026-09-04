@@ -17,10 +17,15 @@ import logging
 import os
 import signal
 import sys
-import termios
 import threading
 import time
-import tty
+
+try:
+    import termios
+    import tty
+except ImportError:  # Windows: khong co termios/tty trong thu vien chuan
+    termios = None
+    tty = None
 from urllib.parse import urlparse
 
 import websocket
@@ -28,6 +33,12 @@ import websocket
 from colab_cli.state import SessionState
 
 logger = logging.getLogger(__name__)
+
+# True chi khi may CO ban dung POSIX tty dung duoc. Tren Windows
+# sys.stdin.isatty() van co the tra True, nhung khong co termios/tty de dat
+# che do raw va signal.SIGWINCH khong ton tai. Gop dieu kien vao mot cho de
+# hai nhanh dung stdin khong bao gio lech nhau.
+_CO_TTY_POSIX = termios is not None and tty is not None
 
 # Global flag to stop the read thread when the websocket closes
 _is_running = False
@@ -88,7 +99,7 @@ def on_open(ws):
 
     # Setup the background thread to read from stdin
     def read_stdin():
-        is_tty = sys.stdin.isatty()
+        is_tty = sys.stdin.isatty() and _CO_TTY_POSIX
         while _is_running:
             try:
                 # Read a single character (or escape sequence byte)
@@ -132,7 +143,7 @@ def connect_console(session: SessionState):
     ws_scheme = "wss" if parsed.scheme == "https" else "ws"
     ws_url = f"{ws_scheme}://{parsed.netloc}/colab/tty?colab-runtime-proxy-token={session.token}"
 
-    is_tty = sys.stdin.isatty()
+    is_tty = sys.stdin.isatty() and _CO_TTY_POSIX
     fd = sys.stdin.fileno() if is_tty else None
     old_settings = termios.tcgetattr(fd) if is_tty else None
 

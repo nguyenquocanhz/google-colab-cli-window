@@ -1,5 +1,26 @@
 # Colab CLI
 
+> **Windows-compatibility fork** of
+> [`googlecolab/google-colab-cli`](https://github.com/googlecolab/google-colab-cli).
+>
+> Upstream imports `termios` and `tty` at module scope in `console.py`, which
+> `commands/execution.py` pulls in while loading `colab_cli.cli`. Both modules
+> are POSIX-only, so on Windows **every** subcommand — including
+> `colab --version` — failed with
+> `ModuleNotFoundError: No module named 'termios'`.
+>
+> This fork guards those imports, routes Windows to the piped-stdin path that
+> the client already supports, and gives the `drivemount` consent prompt a
+> `CONIN$` fallback for `/dev/tty`.
+>
+> **Works on Windows:** `new` · `sessions` · `status` · `stop` · `exec` ·
+> `run` · `upload` · `download` · `ls` · `rm` · `install` · `log` · `version`.
+> **POSIX-only by design:** `console` and `repl` interactive raw mode.
+> **Known gaps** (pre-existing, previously masked by the import error):
+> 21 tests still fail on Windows — `test_repl` (11, prompt_toolkit Windows
+> output), `test_ssh_lifecycle` (4) and `test_ssh_autocreate` (2, POSIX signal
+> handling in proxy mode), `test_cli` (4).
+
 A command-line interface for Google Colab. Provision high-performance CPU, GPU, and TPU runtimes, execute local code, manage remote files, and orchestrate automated cloud pipelines — directly from your terminal.
 
 Designed to support seamless developer productivity, headless automation, and AI agent integrations.
