@@ -412,9 +412,47 @@ def stop(
     session: Annotated[
         Optional[str], typer.Option("-s", "--session", help="Session name")
     ] = None,
+    endpoint: Annotated[
+        Optional[str],
+        typer.Option(
+            "-e",
+            "--endpoint",
+            help="Terminate by server endpoint. Use for a runtime the local "
+            "store no longer names, which `colab sessions` shows as [?].",
+        ),
+    ] = None,
 ):
     """Stop a session"""
     from colab_cli.common import state
+
+    # An assignment lives on the SERVER; its name lives only in the LOCAL
+    # store. Lose the store and the runtime keeps burning quota with nothing
+    # able to name it: `colab sessions` prints it as [?], `colab stop` cannot
+    # reach it, and `colab new` then fails with "Allocation refused
+    # (precondition failed)" -- a dead end reachable with no user error.
+    #
+    # `unassign` needs only the endpoint plus the client's own credentials --
+    # never the per-session token, which is the part the lost store held. So
+    # the endpoint printed by `colab sessions` is enough to clean up.
+    if endpoint:
+        if session:
+            typer.echo("[colab] Pass either --session or --endpoint, not both.")
+            raise typer.Exit(code=2)
+        known = next(
+            (v.name for v in state.store.list().values() if v.endpoint == endpoint),
+            None,
+        )
+        typer.echo(f"[colab] Stopping endpoint '{endpoint}'...")
+        state.client.unassign(endpoint)
+        if known:
+            state.store.remove(known)
+        state.history.log_event(
+            known or endpoint,
+            "session_terminated",
+            {"reason": "user_requested", "by": "endpoint"},
+        )
+        typer.echo("[colab] Session terminated.")
+        return
 
     name = state.resolve_session(session)
     s = state.store.get(name)
