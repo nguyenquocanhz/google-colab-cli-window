@@ -54,3 +54,36 @@ Expect exit code 0 both ways, the directory gone afterwards, and the PATH entry
 withdrawn. A per-user MSI registers under
 `HKCU\Software\Microsoft\Installer\Products`, not under the `Uninstall` key you
 would check for a per-machine install.
+
+## Signing
+
+Nothing in the v0.6.0-win.1 release is signed. `dong-goi/ky-so.ps1` is the
+pipeline for when a certificate exists:
+
+```
+.\dong-goi\ky-so.ps1 -Thumbprint <thumbprint of a cert in Cert:\CurrentUser\My>
+```
+
+It refuses to start without a real certificate, signs `colab.exe` and the
+`.msi`, timestamps both, and verifies with `signtool verify /pa` — the
+Authenticode policy, the one Windows itself applies. Verifying under the
+default policy can pass for a file Windows will still refuse.
+
+Two things worth knowing before buying anything:
+
+- **Timestamping is not optional.** `/tr` is in the script for a reason: an
+  untimestamped signature dies the day the certificate expires, including on
+  copies already downloaded and installed. A timestamped one survives, because
+  the timestamp proves the signature predates expiry.
+- **An OV certificate may not solve the problem you bought it for.**
+  SmartScreen reputation accumulates over downloads, so early users still see
+  the warning. EV certificates carry reputation from the first download;
+  Azure Trusted Signing is far cheaper than either but needs a verifiable legal
+  entity.
+
+There is no free certificate that Windows trusts. A self-signed one is free and
+untrusted; making it trusted means asking every user to install your root
+certificate, which teaches them to lower their machine's defences for you. The
+honest alternative for an unsigned build is to publish SHA256 sums, tell people
+plainly why the warning appears, and show them "More info → Run anyway" — which
+allows one binary rather than weakening anything.
