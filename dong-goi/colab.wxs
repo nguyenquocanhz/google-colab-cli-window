@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  colab.wxs — bộ cài MSI cho bản Windows của Colab CLI.
+
+  Cài THEO NGƯỜI DÙNG (perUser), không phải theo máy. Chủ ý:
+
+    · không cần quyền quản trị, nên không có hộp thoại UAC. Gói này CHƯA KÝ SỐ,
+      mà một MSI chưa ký lại đòi nâng quyền là thứ người dùng nên nghi ngờ —
+      và họ nghi là đúng.
+    · PATH ghi vào biến của người dùng, không đụng PATH toàn máy.
+    · gỡ cài đặt sạch: xoá thư mục và gỡ luôn mục PATH.
+
+  Phiên bản MSI phải là số thuần x.y.z, không mang được hậu tố git như
+  `0.1.dev53+g11c0f6af8`. Số hiệu commit thật nằm trong `colab version`.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+
+  <!-- Codepage="65001": bảng mã của CSDL MSI mặc định là 1252, không chứa nổi
+       chữ Việt, và `light` từ chối với LGHT0311. Đây là lần thứ bảy trong dự
+       án này một mặc định theo locale cắn vào chữ không-ASCII — cùng họ với
+       `open()` thiếu encoding và bộ ghi log ghi ra cp1252. -->
+  <Product Id="*"
+           Name="Colab CLI (Windows build)"
+           Language="1033"
+           Version="0.6.1"
+           Manufacturer="nguyenquocanhz"
+           UpgradeCode="7C1F2A64-9B3D-4E58-A0D7-2F5E8C41B9A3">
+
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perUser"
+             Description="Colab CLI - Windows-compatibility build"
+             Comments="Fork of googlecolab/google-colab-cli. Apache-2.0." />
+
+    <!-- KHÔNG tự khai ALLUSERS ở đây. `InstallScope="perUser"` bên trên đã sinh
+         sẵn ALLUSERS rỗng + MSIINSTALLPERUSER=1; khai lại bằng tay thì WiX từ
+         chối ("Property/@Value cannot be an empty string") vì XML không có
+         cách viết chuỗi rỗng cho thuộc tính này. -->
+    <Property Id="MSIINSTALLPERUSER" Secure="yes" Value="1" />
+    <Property Id="ARPURLINFOABOUT"
+              Value="https://github.com/nguyenquocanhz/google-colab-cli-window" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Colab CLI is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="ProgramsFolder" Name="Programs">
+          <Directory Id="INSTALLFOLDER" Name="Colab CLI" />
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="CmpColabExe"
+                 Guid="1D4B7E90-3C62-4A17-8F5B-6E90D2C4A781">
+        <File Id="FileColabExe"
+              Name="colab.exe"
+              Source="$(var.NguonExe)"
+              KeyPath="yes" />
+
+        <!-- Thêm thư mục cài vào PATH của NGƯỜI DÙNG. `Part="last"` để không
+             chen lên trước công cụ sẵn có của họ; `Action="set"` cộng
+             `System="no"` giữ nó ở phạm vi người dùng. Gỡ cài đặt thì WiX tự
+             rút mục này ra. -->
+        <Environment Id="EnvPath"
+                     Name="PATH"
+                     Value="[INSTALLFOLDER]"
+                     Permanent="no"
+                     Part="last"
+                     Action="set"
+                     System="no" />
+      </Component>
+
+      <Component Id="CmpGiayPhep"
+                 Guid="9A2E5D31-77C8-4B06-BE94-3F1A8D605C22">
+        <File Id="FileGiayPhep" Name="LICENSE.txt" Source="$(var.NguonGiayPhep)" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="Chinh" Title="Colab CLI" Level="1"
+             Description="The colab command line tool, and a user PATH entry.">
+      <ComponentRef Id="CmpColabExe" />
+      <ComponentRef Id="CmpGiayPhep" />
+    </Feature>
+
+  </Product>
+</Wix>

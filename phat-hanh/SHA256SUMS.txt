@@ -1,0 +1,4 @@
+4e2aa0ef68db1d7f5eae02b946d11104f56e5c4a1dbeec4156f1227a012b63d4 *colab-windows-x64.exe
+9f3f54063e4ba28eafc6f78224e39d1225eba05e4b7c7e0edddea7a9c1ecc6df *google_colab_cli-0.1.dev53+g11c0f6af8-py3-none-any.whl
+5b5808babdb08d4caff6157fc926a68f6718422ac606e3cf55c57089c1ca212d *google_colab_cli-0.1.dev53+g11c0f6af8.tar.gz
+3690551a33335d499141be97264540152de6068463c24517a11272f1d12060ad *ColabCLI-windows-0.6.1.msi
