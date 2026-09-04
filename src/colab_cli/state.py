@@ -1,4 +1,4 @@
-﻿# Copyright 2026 Google LLC
+# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -63,11 +63,30 @@ class _LockedFileStore:
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
 
     def _write_data(self, f: IO, data: str):
-        f.seek(0)
-        f.truncate()
-        f.write(data)
-        f.flush()
-        os.fsync(f.fileno())
+        # Write to a sibling temp file, fsync it, then rename over the target.
+        # `seek(0); truncate(); write()` leaves a window where the file is
+        # EMPTY, so any death in between -- SIGKILL, power loss, a killed
+        # wrapper process -- destroys every session name on disk while the
+        # runtimes keep running on the server, unreachable and still counted
+        # against quota. `os.replace` is atomic on POSIX and on Windows, so a
+        # reader sees either the old content or the new, never nothing.
+        #
+        # The caller still holds the exclusive lock and still owns `f`; we
+        # leave `f` untouched so the lock's own bookkeeping is unaffected.
+        self._ensure_dir()
+        tam = "%s.tmp%d" % (self.path, os.getpid())
+        try:
+            with open(tam, "w", encoding="utf-8") as g:
+                g.write(data)
+                g.flush()
+                os.fsync(g.fileno())
+            os.replace(tam, self.path)
+        except BaseException:
+            try:
+                os.unlink(tam)
+            except OSError:
+                pass
+            raise
 
     @contextlib.contextmanager
     def _lock_shared(self) -> Iterator[Optional[IO]]:
