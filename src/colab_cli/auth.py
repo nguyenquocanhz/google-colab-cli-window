@@ -100,7 +100,7 @@ def _get_google_auth_credentials(config_path: str) -> Credentials:
     """
     client_config = None
     if os.path.exists(config_path):
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             client_config = json.load(f)
     else:
         # Last resort: try inlined config
@@ -143,7 +143,7 @@ def _get_google_auth_credentials(config_path: str) -> Credentials:
 
         # Save the credentials for the next run
         try:
-            with open(TOKEN_CONFIG_PATH, "w") as token_file:
+            with open(TOKEN_CONFIG_PATH, "w", encoding="utf-8") as token_file:
                 token_file.write(creds.to_json())
         except Exception as e:
             logger.error(f"Failed to save token to {TOKEN_CONFIG_PATH}: {e}")

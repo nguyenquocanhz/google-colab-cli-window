@@ -12,20 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Regression tests for POSIX-only imports leaking into the Windows path.
+"""Regression tests for platform assumptions that only bite on Windows.
 
-`console.py` used to `import termios` (and `tty`) unconditionally at module
-scope. Because `commands/execution.py` does `from colab_cli.console import
-connect_console`, that import ran while merely loading `colab_cli.cli` -- so on
-Windows *every* subcommand died with `ModuleNotFoundError: No module named
-'termios'`, including `colab --version`.
+Two families, both of which shipped green through Linux-only CI:
 
-These tests reproduce that failure mode on any platform by hiding the modules,
-so the regression is caught in CI on Linux rather than only by Windows users.
+1. POSIX-only imports. `console.py` did `import termios` at module scope, and
+   `commands/execution.py` does `from colab_cli.console import connect_console`,
+   so the import ran while merely loading `colab_cli.cli`. Every subcommand
+   died with `ModuleNotFoundError`, including `colab --version`.
+
+2. Locale-dependent text I/O. `open(path, "r")` without `encoding=` uses the
+   locale codec: UTF-8 on Linux, cp1252 on Windows. `colab exec -f script.py`
+   raised `UnicodeDecodeError` on any script with a non-ASCII character.
+
+The tests below reproduce both on any platform, so CI on Linux catches them.
 """
 
 import builtins
 import importlib
+import pathlib
+import re
 import sys
 
 import pytest
@@ -54,6 +60,20 @@ def _reload(module_name):
     return importlib.import_module(module_name)
 
 
+def _package_roots():
+    """Every directory `colab_cli` resolves from, not just the first.
+
+    A non-editable install puts a *copy* under `.venv/lib/.../colab_cli` while
+    `src/colab_cli` stays on `__path__` too, so scanning only `__path__[0]`
+    silently audits a stale copy: editing the source changes nothing the test
+    can see, and the guard passes vacuously. Verified by removing `encoding=`
+    from `state.py` and watching a single-root version of this test still pass.
+    """
+    import colab_cli
+
+    return [pathlib.Path(p) for p in colab_cli.__path__]
+
+
 def test_console_imports_without_termios(hide_posix_tty):
     """`colab_cli.console` must import when termios/tty are unavailable."""
     console = _reload("colab_cli.console")
@@ -74,23 +94,20 @@ def test_console_module_has_no_bare_posix_import():
     """Guard the source itself, so the import cannot silently regress.
 
     A future edit that reintroduces a top-level `import termios` would still
-    pass the tests above on Linux (where the module exists) unless the fixture
-    happened to be used, so assert on the text as well.
+    pass the tests above on Linux, where the module exists, so assert on the
+    text as well. Column 0 means module scope; guarded imports sit indented
+    inside a `try:` block.
     """
     import colab_cli.console as console
 
-    with open(console.__file__, encoding="utf-8") as fh:
-        lines = fh.read().splitlines()
-
+    lines = pathlib.Path(console.__file__).read_text(encoding="utf-8").splitlines()
     offenders = [
-        (n, line)
+        f"line {n}: {line!r}"
         for n, line in enumerate(lines, 1)
-        # column 0 == module scope; guarded imports are indented inside `try:`
         if any(line == f"import {mod}" for mod in POSIX_ONLY)
     ]
     assert not offenders, (
-        "POSIX-only modules imported unguarded at module scope: "
-        + ", ".join(f"line {n}: {line!r}" for n, line in offenders)
+        "POSIX-only modules imported unguarded at module scope: " + ", ".join(offenders)
     )
 
 
@@ -104,3 +121,41 @@ def test_is_tty_requires_posix_tty(hide_posix_tty, monkeypatch, is_a_tty):
     console = _reload("colab_cli.console")
     monkeypatch.setattr(sys.stdin, "isatty", lambda: is_a_tty, raising=False)
     assert (console._CO_TTY_POSIX and is_a_tty) is False
+
+
+# `(?<![\w.])` keeps this to the builtin: `\bopen\(` also matches the `open(`
+# inside `webbrowser.open(...)` and `urllib.request.urlopen(...)`, because a
+# word boundary sits right after the dot.
+_OPEN_CALL = re.compile(r"(?<![\w.])open\(([^)]*)\)")
+_BINARY_MODE = re.compile(r"""['"][rwax]\+?b\+?['"]""")
+
+
+def test_no_text_open_without_encoding():
+    """Text-mode `open()` without `encoding=` picks up the locale codec.
+
+    UTF-8 on Linux, cp1252 on Windows. This broke `colab exec -f` for any
+    script containing a non-ASCII character, and `auth.py` wrote `token.json`
+    the same way. Binary opens are exempt; so is the `drivemount` keypress
+    gate, which opens a raw console device rather than decoded text.
+    """
+    offenders = []
+    seen = set()
+    for root in _package_roots():
+        for path in sorted(root.rglob("*.py")):
+            if path.resolve() in seen:
+                continue
+            seen.add(path.resolve())
+            text = path.read_text(encoding="utf-8")
+            for number, line in enumerate(text.splitlines(), 1):
+                for match in _OPEN_CALL.finditer(line):
+                    args = match.group(1)
+                    if "encoding=" in args or _BINARY_MODE.search(args):
+                        continue
+                    if "_duong" in args:
+                        continue
+                    offenders.append(f"{path}:{number}: {line.strip()}")
+    assert seen, "scanned no source files -- the guard would pass vacuously"
+    assert not offenders, (
+        "text-mode open() without encoding= is locale-dependent and fails on "
+        "Windows:\n" + "\n".join(offenders)
+    )

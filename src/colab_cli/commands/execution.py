@@ -188,7 +188,10 @@ def exec_command(
                             {"code": cell.source, "id": cell.id, "cell": cell}
                         )
         else:
-            with open(file, "r") as f:
+            # encoding= is required: without it Python uses the locale
+            # default (cp1252 on Windows), so any non-ASCII character in a
+            # user script raises UnicodeDecodeError before it is ever sent.
+            with open(file, "r", encoding="utf-8") as f:
                 code_blocks.append({"code": f.read(), "id": None})
     else:
         if is_stdin_tty():

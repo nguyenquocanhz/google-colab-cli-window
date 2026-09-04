@@ -1,4 +1,4 @@
-# Copyright 2026 Google LLC
+﻿# Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -75,13 +75,13 @@ class _LockedFileStore:
             yield None
             return
         with self._rwlock.read_lock():
-            with open(self.path, "r") as f:
+            with open(self.path, "r", encoding="utf-8") as f:
                 yield f
 
     @contextlib.contextmanager
     def _lock_exclusive(self) -> Iterator[IO]:
         with self._rwlock.write_lock():
-            with open(self.path, "a+") as f:
+            with open(self.path, "a+", encoding="utf-8") as f:
                 yield f
 
 
