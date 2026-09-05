@@ -73,8 +73,26 @@ class _LockedFileStore:
         # against quota. `os.replace` is atomic on POSIX and on Windows, so a
         # reader sees either the old content or the new, never nothing.
         #
-        # The caller still holds the exclusive lock and still owns `f`; we
-        # leave `f` untouched so the lock's own bookkeeping is unaffected.
+        # CLOSE `f` FIRST -- on Windows the replace fails otherwise.
+        #
+        # `_lock_exclusive` opens the target and hands the caller `f`, which
+        # the caller reads through `_load_raw` before writing. Windows refuses
+        # to rename over a file that still has an open handle unless every
+        # handle was opened with FILE_SHARE_DELETE, and `open()` does not ask
+        # for it -- so `os.replace` raised `PermissionError: [WinError 5]` and
+        # the store could not be written AT ALL. Not a corner case: every
+        # `colab new` failed to record its session, which is the orphaned
+        # runtime this atomic write was added to prevent, arrived at by
+        # another road. POSIX allows the rename over an open handle, which is
+        # why the original version passed there and the Windows suite went
+        # from 17 passing to 11 failing in `test_state.py` alone.
+        #
+        # Closing early is safe: `f` exists only to be READ (the lock lives in
+        # a separate `.lock` file, so the handle carries no locking duty since
+        # the move off `fcntl`), every caller has finished with it by the time
+        # it writes, and the `with open(...)` in `_lock_exclusive` closing an
+        # already-closed file is a no-op. The exclusive lock is still held
+        # throughout, so no other process can slip in between.
         self._ensure_dir()
         tam = "%s.tmp%d" % (self.path, os.getpid())
         try:
@@ -82,6 +100,10 @@ class _LockedFileStore:
                 g.write(data)
                 g.flush()
                 os.fsync(g.fileno())
+            try:
+                f.close()
+            except (OSError, ValueError):
+                pass
             os.replace(tam, self.path)
         except BaseException:
             try:

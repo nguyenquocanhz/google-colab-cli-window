@@ -29,10 +29,13 @@ The tests below reproduce both on any platform, so CI on Linux catches them.
 """
 
 import builtins
+import contextlib
 import importlib
+import io
 import pathlib
 import re
 import sys
+import tokenize
 
 import pytest
 
@@ -130,6 +133,33 @@ _OPEN_CALL = re.compile(r"(?<![\w.])open\(([^)]*)\)")
 _BINARY_MODE = re.compile(r"""['"][rwax]\+?b\+?['"]""")
 
 
+def _bo_chu_thich(text: str) -> str:
+    """Blank out `#` comments, keeping line numbers intact.
+
+    The scan is a line regex, so it cannot tell a call from prose about a
+    call: a comment explaining why some `open(...)` behaves as it does was
+    reported as an offender. Stripping comments narrows the guard to code
+    without weakening it -- a real call never lives inside a comment.
+
+    Tokenizing rather than cutting at the first `#`, because a `#` inside a
+    string literal is not a comment and blanking from there would corrupt the
+    line. A file that will not tokenize is returned unchanged: it is not this
+    guard's job to report a syntax error, and scanning the raw text at worst
+    over-reports.
+    """
+    try:
+        cac = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return text
+    dong = text.splitlines()
+    for tok in cac:
+        if tok.type != tokenize.COMMENT:
+            continue
+        hang, cot = tok.start[0] - 1, tok.start[1]
+        dong[hang] = dong[hang][:cot]
+    return "\n".join(dong)
+
+
 def test_no_text_open_without_encoding():
     """Text-mode `open()` without `encoding=` picks up the locale codec.
 
@@ -145,17 +175,67 @@ def test_no_text_open_without_encoding():
             if path.resolve() in seen:
                 continue
             seen.add(path.resolve())
-            text = path.read_text(encoding="utf-8")
-            for number, line in enumerate(text.splitlines(), 1):
+            goc = path.read_text(encoding="utf-8").splitlines()
+            # Scan the comment-stripped text, but report the ORIGINAL line --
+            # a blanked line would show the reader half a statement.
+            quet = _bo_chu_thich("\n".join(goc)).splitlines()
+            for number, line in enumerate(quet, 1):
                 for match in _OPEN_CALL.finditer(line):
                     args = match.group(1)
                     if "encoding=" in args or _BINARY_MODE.search(args):
                         continue
                     if "_duong" in args:
                         continue
-                    offenders.append(f"{path}:{number}: {line.strip()}")
+                    offenders.append(f"{path}:{number}: {goc[number - 1].strip()}")
     assert seen, "scanned no source files -- the guard would pass vacuously"
     assert not offenders, (
         "text-mode open() without encoding= is locale-dependent and fails on "
         "Windows:\n" + "\n".join(offenders)
     )
+
+
+def test_store_write_closes_handle_before_replace(tmp_path, monkeypatch):
+    """The atomic store write must close its read handle before renaming.
+
+    `_lock_exclusive` opens the target and hands the caller a handle to read
+    through; `_write_data` then renames a temp file over that same target.
+    POSIX allows a rename over an open handle, so this passed everywhere CI
+    ran -- while on Windows `os.replace` raised
+    `PermissionError: [WinError 5]` and the session store could not be
+    written AT ALL. Every `colab new` failed to record its session, which is
+    precisely the orphaned, quota-holding runtime the atomic write was added
+    to prevent.
+
+    Asserted on the handle rather than on the platform, so a regression fails
+    on Linux CI too instead of waiting for a Windows user to find it.
+    """
+    import colab_cli.state as st
+
+    store = st.StateStore(str(tmp_path / "sessions.json"))
+
+    giu = {}
+    goc_khoa = store._lock_exclusive
+
+    @contextlib.contextmanager
+    def bat_khoa():
+        with goc_khoa() as f:
+            giu["f"] = f
+            yield f
+
+    monkeypatch.setattr(store, "_lock_exclusive", bat_khoa)
+
+    thay = {}
+    goc_replace = st.os.replace
+
+    def replace(nguon, dich):
+        thay["da_dong"] = giu["f"].closed
+        return goc_replace(nguon, dich)
+
+    monkeypatch.setattr(st.os, "replace", replace)
+    store.add(st.SessionState(name="s", token="t", url="u", endpoint="e"))
+
+    assert thay.get("da_dong") is True, (
+        "os.replace ran while the target still had an open handle; Windows "
+        "refuses that rename with WinError 5"
+    )
+    assert store.get("s") is not None

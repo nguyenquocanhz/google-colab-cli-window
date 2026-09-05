@@ -34,14 +34,24 @@
 >   account gave you *its* session names authenticated as the *first* account.
 >   `COLAB_CLI_HOME` now moves the whole directory: token, sessions, settings,
 >   log and history together. See [Usage Notes](#usage-notes).
+> - **The atomic session write actually works on Windows.** The durability fix
+>   above renamed a temp file over `sessions.json` while the store still held
+>   an open handle on it. POSIX allows that; Windows refuses it with
+>   `PermissionError: [WinError 5]`, so the store could not be written *at
+>   all* and every `colab new` failed to record its session — arriving at the
+>   orphaned runtime the fix existed to prevent. The handle is now closed
+>   before the rename.
 >
 > **Works on Windows:** `new` · `sessions` · `status` · `stop` · `exec` ·
 > `run` · `upload` · `download` · `ls` · `rm` · `install` · `log` · `version`.
 > **POSIX-only by design:** `console` and `repl` interactive raw mode.
 > **Known gaps** (pre-existing, previously masked by the import error):
-> 21 tests still fail on Windows — `test_repl` (11, prompt_toolkit Windows
-> output), `test_ssh_lifecycle` (4) and `test_ssh_autocreate` (2, POSIX signal
-> handling in proxy mode), `test_cli` (4).
+> 23 tests still fail on Windows — `test_repl` (11, prompt_toolkit Windows
+> output), `test_ssh_lifecycle` (4) and `test_ssh_autocreate` (2, POSIX
+> signal handling in proxy mode), `test_cli` (4), `test_auth` (1),
+> `test_runtime` (1). An earlier revision of this note said 21, having
+> counted only the first four suites; the number is now measured from a full
+> run rather than assembled by hand.
 
 A command-line interface for Google Colab. Provision high-performance CPU, GPU, and TPU runtimes, execute local code, manage remote files, and orchestrate automated cloud pipelines — directly from your terminal.
 
@@ -192,7 +202,6 @@ colab stop -s analysis
 * **Multiple accounts:** Set `COLAB_CLI_HOME` to move that whole directory, which is what you want for keeping a personal and a work account side by side:
 
   ```bash
-  COLAB_CLI_HOME=~/.config/colab-cli/work colab login
   COLAB_CLI_HOME=~/.config/colab-cli/work colab sessions
   ```
 
