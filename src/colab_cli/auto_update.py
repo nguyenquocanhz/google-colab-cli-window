@@ -23,6 +23,7 @@ callback (``cli.py``) calls ``check_for_updates`` once per day and
 """
 
 import json
+import os
 import platform
 import subprocess
 import urllib.request
@@ -34,6 +35,7 @@ from typing import Optional
 import typer
 
 from colab_cli.common import state
+from colab_cli.paths import config_home
 from colab_cli.state import Settings
 
 # PyPI distribution name (different from the importable package name `colab`).
@@ -123,9 +125,11 @@ def announce_upgrade(
     typer.echo(f"[colab] Run '{install_cmd}' to update.")
     if show_disable_hint:
         typer.echo(
-            "[colab] To silence this check, set "
-            '"enable_update_check": false in '
-            "~/.config/colab-cli/settings.json"
+            # The real path, not the hardcoded default: with
+            # COLAB_CLI_HOME set, that default names a file the CLI
+            # never reads, so following the hint appears to do nothing.
+            '[colab] To silence this check, set "enable_update_check":'
+            f' false in {os.path.join(config_home(), "settings.json")}'
         )
     typer.echo("")
 

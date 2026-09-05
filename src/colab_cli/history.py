@@ -15,12 +15,19 @@
 import datetime
 import json
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+from colab_cli.paths import config_home
 
 
 class HistoryLogger:
-    def __init__(self, log_dir: str = "~/.config/colab-cli/history"):
-        self.log_dir = os.path.expanduser(log_dir)
+    def __init__(self, log_dir: Optional[str] = None):
+        # Per account, like the token and the sessions it describes.
+        # Leaving the history behind in the shared directory would
+        # merge two accounts' command logs into one file keyed by
+        # session name, and session names collide across accounts.
+        self.log_dir = os.path.expanduser(
+            log_dir or os.path.join(config_home(), "history"))
         os.makedirs(self.log_dir, exist_ok=True)
 
     def _get_log_path(self, session_name: str) -> str:

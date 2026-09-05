@@ -27,6 +27,8 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
+from colab_cli.paths import config_home
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,7 +53,7 @@ PUBLIC_SCOPES = [
 ]
 
 
-TOKEN_CONFIG_PATH = os.path.expanduser("~/.config/colab-cli/token.json")
+TOKEN_CONFIG_PATH = os.path.join(config_home(), "token.json")
 
 # Remote copy-paste OAuth flow.
 #

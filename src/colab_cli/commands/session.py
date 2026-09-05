@@ -33,6 +33,7 @@ from colab_cli.client import (
     shape_display_label,
 )
 from colab_cli.utils import get_status_code
+from colab_cli.auth import TOKEN_CONFIG_PATH
 from colab_cli.state import SessionState
 from colab_cli.runtime import ColabRuntime
 
@@ -84,7 +85,7 @@ def _scope_remediation_message(provider) -> str:
     # OAuth2 (and any future provider) fallback.
     return (
         f"{common}\n"
-        "Delete the cached token at ~/.config/colab-cli/token.json and "
+        f"Delete the cached token at {TOKEN_CONFIG_PATH} and "
         "re-run `colab new` to trigger a fresh consent flow."
     )
 
@@ -486,8 +487,8 @@ def spawn_keep_alive(
     Both `auth_provider` and `config_path` are propagated as global flags
     so the detached child uses the same authentication strategy AND the
     same session state file as the parent that invoked `colab new`.
-    Without this, the child inherits Typer's defaults (`--auth=oauth2`,
-    `--config=~/.config/colab-cli/sessions.json`), which causes:
+    Without this, the child inherits Typer's defaults (`--auth=oauth2`
+    and the default session-state path), which causes:
       (a) wrong auth backend, and
       (b) the daemon's `state.store.get(session_name)` check finds nothing
           and exits with `reason=session_not_found` when the parent used

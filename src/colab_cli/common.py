@@ -24,6 +24,7 @@ import typer
 from colab_cli.auth import AuthProvider, get_credentials
 from colab_cli.client import Client, Prod
 from colab_cli.history import HistoryLogger
+from colab_cli.paths import config_home
 from colab_cli.state import StateStore, SettingsStore
 
 
@@ -173,7 +174,10 @@ def setup_logging(log_to_stderr: bool):
     requests_log.setLevel(logging.DEBUG)
     requests_log.propagate = True
 
-    log_dir = os.path.expanduser("~/.config/colab-cli")
+    # The log follows the account too. Funnelling several accounts into one
+    # colab.log leaves no way to tell, while debugging, which line belongs to
+    # which account -- and the interleaved session names look like corruption.
+    log_dir = config_home()
     os.makedirs(log_dir, exist_ok=True)
     file_handler = logging.FileHandler(os.path.join(log_dir, "colab.log"))
     file_handler.setFormatter(logging.Formatter(log_format))

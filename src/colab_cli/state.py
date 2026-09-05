@@ -21,6 +21,8 @@ from typing import Dict, Optional, Tuple, Iterator, IO
 import filelock
 from pydantic import BaseModel
 
+from colab_cli.paths import config_home
+
 
 class SessionState(BaseModel):
     name: str
@@ -107,7 +109,7 @@ class _LockedFileStore:
 class SettingsStore(_LockedFileStore):
     def __init__(self, path: Optional[str] = None):
         if not path:
-            path = os.path.expanduser("~/.config/colab-cli/settings.json")
+            path = os.path.join(config_home(), "settings.json")
         super().__init__(path)
 
     def load(self) -> Settings:
@@ -131,7 +133,12 @@ class SettingsStore(_LockedFileStore):
 class StateStore(_LockedFileStore):
     def __init__(self, path: Optional[str] = None):
         if not path:
-            path = os.path.expanduser("~/.config/colab-cli/sessions.json")
+            # Same directory as the credentials (see `paths.config_home`),
+            # so an account switch moves sessions and token together.
+            # Moving one
+            # without the other leaves session names pointing at runtimes the
+            # current credentials cannot reach.
+            path = os.path.join(config_home(), "sessions.json")
         super().__init__(path)
 
     def _load_raw(self, f) -> Dict[str, SessionState]:

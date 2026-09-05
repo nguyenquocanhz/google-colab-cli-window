@@ -60,7 +60,16 @@ def callback(
         Optional[str],
         typer.Option(
             "--config",
-            help="Path to session state file (~/.config/colab-cli/sessions.json)",
+            # Deliberately no absolute path here: Typer wraps this help into a
+            # narrow column and an interpolated home directory gets ellipsised
+            # to uselessness. Name the variable instead -- it is the thing the
+            # reader can act on, and it stays correct wherever the files are.
+            help=(
+                "Path to session state file. Defaults to sessions.json in "
+                "the CLI config directory (see COLAB_CLI_HOME). Moves the "
+                "sessions only -- set COLAB_CLI_HOME to move the "
+                "credentials with them."
+            ),
         ),
     ] = None,
     logtostderr: Annotated[
