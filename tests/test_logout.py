@@ -166,3 +166,30 @@ def test_ton_trong_COLAB_CLI_HOME(tmp_path, monkeypatch, mock_store):
     assert r.exit_code == 0, r.output
     assert not (rieng / "token.json").exists()
     assert str(rieng) in r.output
+
+
+def test_khong_chay_kiem_tra_cap_nhat(nha, mock_store, mocker):
+    """`logout` phải nằm trong danh sách chặn tự-cập-nhật.
+
+    `run_background_check()` gọi ra PyPI. Đây là lệnh KHÔNG được đụng mạng --
+    cùng lý do với `sync_sessions` -- và nó còn in ba dòng quảng cáo bản mới
+    lấp mất một dòng kết quả duy nhất, đúng cái cớ khiến `whoami` được chặn
+    từ trước.
+    """
+    goi = mocker.patch("colab_cli.auto_update.run_background_check")
+    r = runner.invoke(app, ["logout"])
+    assert r.exit_code == 0, r.output
+    goi.assert_not_called()
+
+
+def test_thong_bao_thuan_ascii(nha, mock_store):
+    """Chữ in ra phải thuần ASCII, không thì console cp1252 hiện ra dấu hỏi.
+
+    Luồng ra được đặt `errors="replace"`, nên một dấu gạch dài không làm chết
+    lệnh -- nó lặng lẽ biến thành `?`. Cả kho không có `typer.echo` nào chứa
+    ký tự ngoài ASCII; chỗ này từng là ngoại lệ duy nhất.
+    """
+    _co_phien(mock_store, 1)
+    r = runner.invoke(app, ["logout"])
+    ngoai = [c for c in r.output if ord(c) > 127]
+    assert not ngoai, f"ky tu ngoai ASCII trong dau ra: {ngoai!r}"

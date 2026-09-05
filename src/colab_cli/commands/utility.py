@@ -317,8 +317,8 @@ def logout(
         if con:
             typer.echo(
                 f"[colab] {len(con)} session(s) recorded locally. A Colab runtime "
-                f"keeps running — and keeps holding quota — after you sign "
-                f"out, and without the token this CLI can no longer stop it."
+                f"keeps running (and keeps holding quota) after you sign out, and "
+                f"without the token this CLI can no longer stop it."
             )
             for ten in sorted(con):
                 typer.echo(f"          {ten}")
