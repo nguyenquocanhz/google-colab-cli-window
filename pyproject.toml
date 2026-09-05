@@ -56,6 +56,22 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 source = "vcs"
 
+# Read the numeric part of a tag and ignore any fork suffix after it.
+#
+# This fork's release tag is `v0.6.0-win.1`, which the default tag_regex
+# captures WHOLE -- its version group ends in `[^\+]*`, so it swallows
+# `-win.1` -- and `0.6.0-win.1` is not a valid PEP 440 version. The build
+# then dies with "Can't parse version from tag", meaning the repository
+# cannot be pip-installed from any clone that has its own tags. It went
+# unnoticed because the copy it was first installed from had no tags, so
+# the version fell back to `0.1.dev53+...` and built fine.
+#
+# Retagging would fix it too, but `v0.6.0-win.1` is already published on
+# the remote and points at the commit the released build was cut from.
+# Reading the tag differently costs nothing and leaves the release alone.
+[tool.hatch.version.raw-options]
+tag_regex = '^(?:[\w-]+-)?[vV]?(?P<version>\d+(?:\.\d+){0,2})(?:-[\w.]+)?(?:\+.*)?$'
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/colab_cli"]
 
