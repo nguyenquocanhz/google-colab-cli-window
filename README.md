@@ -41,9 +41,15 @@
 >   all* and every `colab new` failed to record its session — arriving at the
 >   orphaned runtime the fix existed to prevent. The handle is now closed
 >   before the rename.
+> - **A way to sign out.** Sign-in is implicit, but nothing signed you out —
+>   deleting `token.json` by hand was the only way, documented only inside an
+>   allocation-failure error message. `colab logout` removes the cached token,
+>   and refuses while runtimes are still listed, because a runtime keeps
+>   holding your quota after you sign out and the token is what `stop` needs.
 >
 > **Works on Windows:** `new` · `sessions` · `status` · `stop` · `exec` ·
-> `run` · `upload` · `download` · `ls` · `rm` · `install` · `log` · `version`.
+> `run` · `upload` · `download` · `ls` · `rm` · `install` · `log` ·
+> `logout` · `version`.
 > **POSIX-only by design:** `console` and `repl` interactive raw mode.
 > **Known gaps** (pre-existing, previously masked by the import error):
 > 23 tests still fail on Windows — `test_repl` (11, prompt_toolkit Windows
@@ -203,7 +209,10 @@ colab stop -s analysis
 
   ```bash
   COLAB_CLI_HOME=~/.config/colab-cli/work colab sessions
+  COLAB_CLI_HOME=~/.config/colab-cli/work colab whoami
   ```
+
+  There is no `login` command — the first command that needs credentials starts the sign-in flow and caches the result, so pointing the variable at an empty directory and running anything is how you add an account. (`colab auth` is unrelated: it authenticates *inside the VM*, for Drive and gcloud.) `colab logout` is the way back out; it deletes only that profile's `token.json`.
 
   Read once at startup, so export it before the process runs. Prefer this over `--config` for account switching: `--config` moves the sessions while leaving the credentials behind, so the session names you get back belong to one account and the identity you get back belongs to another.
 

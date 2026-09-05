@@ -1,5 +1,6 @@
 ---
 log:
+2026-09-05: Added `colab logout`. Signing out had no command at all: sign-in is implicit (there is no `colab login` -- the first command that touches the backend mints and caches credentials), so the only way to sign out was to delete `token.json` by hand, and the only place that was written down is an error message in `commands/session.py` that mentions "delete the cached token at ..." when allocation fails. Wanted while switching between two accounts under `COLAB_CLI_HOME`, where "which account am I actually signed in as" is a question that comes up constantly. Deletes `<config_home>/token.json` and nothing else: `sessions.json` holds the session names that are the only handle `colab stop` accepts, so clearing it alongside the token would manufacture exactly the orphaned runtimes `colab stop --endpoint` was added to recover from. For the same reason it refuses (exit 1) while the local store still lists sessions -- a Colab runtime keeps running and keeps holding the quota after you sign out, and the token is what the CLI needs to stop it -- printing the names and pointing at `colab stop -s <name>`; `--force` skips the check. The check reads `state.store.list()` off disk, NOT `state.sync_sessions()`: the first cut called `sync_sessions`, which builds a client, which mints credentials, which opens a browser consent flow, so signing out demanded signing in first and an already-expired token (the usual reason to type `logout`) broke the path before it could report anything. That was caught by `pytest` printing `Generated new state ...` from `requests_oauthlib` while the token got deleted anyway, the exception having been swallowed -- and the root cause was the module-level `from colab_cli.common import state` at line 22, a binding that never follows a reassignment of the module attribute and so ignores the autouse state fixture entirely; `logout` re-imports `state` in the function body, matching the pattern `url` already uses in the same module. `--force` skips the store read as well so a corrupt `sessions.json` cannot block the last way out, and a read that fails for any other reason is reported rather than silently treated as "no sessions". `tests/test_logout.py` (9 cases) covers deletion, the refusal leaving the token in place, both `--force` paths, the double-logout no-op, the survival of `sessions.json`/`settings.json`, `COLAB_CLI_HOME` being honoured so the wrong account cannot be signed out, and an explicit `sync_sessions.assert_not_called()`. Full suite on Windows after this change: 23 failed / 339 passed. The starting point was a pristine-tree 34 failed / 318 passed; `logout` contributed +9 passing and no new failures (measured on its own before the store fix landed: 34 failed / 327 passed, identical failure set), and the Windows store-write fix logged the same day in `01_session_management.md` accounts for the rest.
 2026-09-04: Made the `colab drivemount` consent prompt work on Windows. The "Press Enter after you have granted access" gate read from `/dev/tty` so that a piped stdin could not skip it; that device does not exist on Windows and raised `FileNotFoundError` mid-flow, after the OAuth URL had already been printed. It now tries `/dev/tty`, then `CONIN$` (the Windows console-input device, which preserves the same do-not-consume-piped-stdin property), and finally falls back to `sys.stdin.readline()` when no console is attached.
 2026-06-11: Replaced the `oauth2` provider's `run_local_server()` (localhost redirect) with a remote copy-paste flow (`_run_remote_flow` in `auth.py`). The CLI now prints an authorization URL built with `redirect_uri=https://sdk.cloud.google.com/applicationdefaultauthcode.html` and `token_usage=remote`, then reads the pasted authorization code via `input()` and exchanges it with `flow.fetch_token(code=...)`. This is the same flow `gcloud auth application-default login` uses and works identically in local and remote/headless/container environments, removing the heuristic of whether to auto-open a browser. Confirmed server-side acceptance with a live GET-only check against the bundled cloud-SDK client (`764086051850-...`); the OOB redirect and a non-bundled client id were both verified to be rejected (`OOB flow has been blocked` / `redirect_uri_mismatch`). Unit tests in `tests/test_auth.py` assert no localhost server is started, the redirect URI + `token_usage=remote` are set, and the pasted code is exchanged.
 2026-06-01: Enabled `colab update --install` self-update on macOS in addition to Linux. Refactored platform check logic to keep the implementation DRY and updated both tests and documentation. Also, on these platforms, an additional message is shown recommending `colab update --install` to upgrade in place, positioned above the standard `pip`/`uv` installation command.
@@ -13,7 +14,7 @@ log:
 2026-05-12: Added an optional `timeout=` parameter to `ColabRuntime.execute_code` that flows through to both the `execute()` and `execute_interactive()` branches. `colab auth` and `colab drivemount` now pass `timeout=600` (10 min) via a shared `INTERACTIVE_AUTOMATION_TIMEOUT_SEC` constant in `commands/automation.py`. Background: `jupyter_kernel_client` defaults to a 10s wall-clock timeout that is consumed even when the kernel is idle waiting on `input_request`. With the drivefs hook intercepting that request and prompting the user to OAuth in their browser, any user that takes >10s to click through (essentially everyone) hit `TimeoutError` and saw "drivemount failed" even though the mount had actually succeeded server-side. The fix is scoped narrowly to the two human-in-the-loop subcommands; non-interactive paths (`colab exec`, `colab run`, `colab install`, `colab repl --pipe`, `colab console --pipe`) keep the upstream default since they receive continuous iopub traffic that resets the practical inactivity ceiling.
 ---
 
-# Design: Automation and Utility (`auth`, `install`, `log`, `pay`, `version`, `update`, `whoami`)
+# Design: Automation and Utility (`auth`, `install`, `log`, `logout`, `pay`, `version`, `update`, `whoami`)
 
 ## Overview
 
@@ -279,6 +280,61 @@ remediation guidance) rather than silently after ~1 minute via the daemon.
     -   If reading from resources fails (e.g. during development when not
         installed), it falls back to reading the files from the project root.
     -   Prints the content to stdout.
+
+### 10. Signing Out (`colab logout`)
+
+-   **Action**: Delete the cached OAuth refresh token so the next command that
+    needs auth starts a fresh sign-in.
+-   **Note the asymmetry**: there is no `colab login`. Sign-in is implicit —
+    the first command that touches the backend mints credentials and caches
+    them. (`colab auth` is a different thing entirely: it authenticates
+    *inside the VM*, for Drive and gcloud.) Signing out had no counterpart at
+    all until this command; the only way was to delete the file by hand, and
+    the only place that was written down is an error message in
+    `commands/session.py` telling you to "delete the cached token at ..."
+    when allocation fails.
+-   **Implementation**:
+    -   Removes `<config_home>/token.json` and nothing else. `sessions.json`,
+        `settings.json`, `colab.log` and `history/` hold no secret, and the
+        session names in `sessions.json` are the only handle `colab stop`
+        accepts — deleting them alongside the token would manufacture the
+        orphaned runtimes described in `01_session_management.md`.
+    -   Resolves the path through `paths.config_home()`, so it signs out of
+        the profile named by `COLAB_CLI_HOME` rather than the default one.
+    -   Missing token exits 0 with "Already signed out": running it twice, or
+        running it before ever signing in, is not a failure.
+-   **The refusal**: a Colab runtime does not stop when you sign out. It keeps
+    running and keeps holding the quota, and once the token is gone the CLI
+    can no longer reach it to call `stop` — the exact orphaned-runtime state
+    `colab stop --endpoint` was added to recover from. So the command refuses
+    (exit 1) while the local store still lists sessions, prints their names,
+    and points at `colab stop -s <name>`. `--force` skips the check.
+-   **The check reads the local store, never the server.** The first cut
+    called `state.sync_sessions()`, which is the obvious choice and the wrong
+    one: it builds a client, which mints credentials, which opens a browser
+    consent flow. Signing out must not require signing in first, and an
+    expired token — the usual reason to reach for `logout` — makes that path
+    fail before it can report anything. It failed loudly in `pytest`, which
+    printed `Generated new state ...` from `requests_oauthlib` and then
+    deleted the token anyway because the exception was swallowed.
+    `state.store.list()` reads `sessions.json` off disk; that is enough,
+    since a name is what `stop` needs and a name only ever exists locally.
+    `--force` skips the read entirely, so a corrupt `sessions.json` cannot
+    block the last way out. If the read fails for any other reason the
+    command says so and continues rather than signing out silently.
+-   **Uses the lazy-state import.** `utility.py` binds `state` at module
+    import (line 22). A module-level binding never follows a reassignment of
+    `colab_cli.common.state`, so a command that closes over it ignores the
+    test suite's autouse state fixture and reaches for the real singleton —
+    which is how the first version opened a live OAuth flow during a test
+    run. `logout` re-imports `state` inside the function body, matching the
+    pattern already used by `url` in the same module.
+-   **Tests**: `tests/test_logout.py` (9 cases) covers the deletion, the
+    refusal and that it leaves the token in place, `--force` in both the
+    normal and unreadable-store cases, the double-logout no-op, that
+    `sessions.json`/`settings.json` survive, and that `COLAB_CLI_HOME` is
+    honoured so the wrong account cannot be signed out. One case asserts
+    `sync_sessions` is never called, which is the regression that matters.
 
 ## Implementation Details
 

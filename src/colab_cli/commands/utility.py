@@ -240,6 +240,102 @@ def log(
                 typer.echo(f"[{ts}] EVENT: {etype}")
 
 
+def logout(
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force", "-f", help="Delete the token even if sessions are still running."
+        ),
+    ] = False,
+):
+    """Sign out by deleting the cached OAuth token.
+
+    There was no way to do this. The CLI caches a refresh token at
+    `<config_home>/token.json` and reuses it forever; switching Google
+    accounts, or signing out on a shared machine, meant knowing to delete
+    that file by hand. The only hint was buried in an error message
+    (`commands/session.py` tells you to "delete the cached token at ..."
+    when allocation fails), which is a strange place to document a routine
+    operation.
+
+    STOP YOUR SESSIONS FIRST — this refuses to run while any are alive.
+    A Colab runtime does not stop when you sign out: it keeps holding the
+    quota, and once the token is gone the CLI can no longer reach it to
+    call `stop`. That is the orphaned-runtime failure this fork already
+    added `colab stop --endpoint` to recover from; signing out carelessly
+    is a reliable way to create one. `--force` skips the check for when the
+    token is already invalid and the listing itself is what fails.
+
+    Only `token.json` is removed. `sessions.json`, `settings.json` and the
+    logs stay: they hold no secret, and keeping them means the next sign-in
+    still has its history.
+    """
+    import os
+
+    # Imported here, not taken from the module-level `state` bound at line 22,
+    # to mirror the lazy-state pattern used elsewhere in this module. The
+    # module-level name is bound once at import and never follows a
+    # reassignment of `colab_cli.common.state`, so a command that closes over
+    # it silently ignores the test suite's state fixture and reaches for the
+    # real singleton — which is how the first version of this command ended up
+    # opening a live OAuth consent flow during `pytest`.
+    from colab_cli.common import state
+    from colab_cli.paths import config_home
+
+    duong = os.path.join(config_home(), "token.json")
+    if not os.path.exists(duong):
+        typer.echo(f"[colab] Already signed out (no token at {duong}).")
+        return
+
+    if not force:
+        # Read the LOCAL session store, do not ask the server.
+        #
+        # `sync_sessions()` was the obvious call and it is the wrong one: it
+        # builds a client, which mints credentials, which opens a browser
+        # consent flow. Signing out must not require signing in first — and
+        # when the token is already expired, which is exactly when people
+        # reach for `logout`, that path fails before it can tell you
+        # anything. Caught by the test: the run printed
+        # "Generated new state ..." from requests_oauthlib and then deleted
+        # the token anyway, because the failure was swallowed.
+        #
+        # The local store is enough for the warning. It holds the names of
+        # runtimes this machine started, and a name is what `colab stop`
+        # needs; if it is empty there is nothing this CLI could stop anyway.
+        try:
+            con = state.store.list()
+        except Exception as e:
+            # Say so rather than sign out quietly. Proceeding is still the
+            # right call — refusing would leave no way to sign out at all
+            # short of `--force` — but the user should know the safety
+            # check did not actually run.
+            typer.echo(
+                f"[colab] Warning: could not read the session list "
+                f"({e}); signing out without checking."
+            )
+            con = {}
+        if con:
+            typer.echo(
+                f"[colab] {len(con)} session(s) recorded locally. A Colab runtime "
+                f"keeps running — and keeps holding quota — after you sign "
+                f"out, and without the token this CLI can no longer stop it."
+            )
+            for ten in sorted(con):
+                typer.echo(f"          {ten}")
+            typer.echo(
+                "[colab] Run `colab stop -s <name>` first, or re-run with --force."
+            )
+            raise typer.Exit(1)
+
+    try:
+        os.remove(duong)
+    except OSError as e:
+        typer.echo(f"[colab] Could not remove {duong}: {e}")
+        raise typer.Exit(1)
+    typer.echo(f"[colab] Signed out. Removed {duong}")
+    typer.echo("[colab] The next command that needs auth will prompt again.")
+
+
 def whoami():
     """[debug] Print the active credentials' identity, scopes, and expiry.
 
@@ -427,6 +523,7 @@ def register(app: typer.Typer):
     app.command(name="url")(url)
     app.command(name="version")(version_command)
     app.command(name="update")(update_command)
+    app.command(name="logout")(logout)
     # Developer-only debugging aid; hidden from `colab --help` but still
     # reachable via `colab whoami` / `colab whoami --help`.
     app.command(name="whoami", hidden=True)(whoami)
