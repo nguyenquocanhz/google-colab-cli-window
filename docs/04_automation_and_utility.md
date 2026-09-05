@@ -31,7 +31,8 @@ backend, selected via the global `--auth=<provider>` flag:
     `token_usage=remote`) using the registered HTTPS landing page
     `https://sdk.cloud.google.com/applicationdefaultauthcode.html`; the user
     signs in, copies the code Google displays, and pastes it back at the
-    prompt. The refresh token is cached at `~/.config/colab-cli/token.json`.
+    prompt. The refresh token is cached at `<config_home>/token.json`
+    (see `COLAB_CLI_HOME` in `01_session_management.md`).
     This is the same mechanism `gcloud auth application-default login` uses,
     and it behaves identically on local, remote, headless, and container
     hosts (no auto-opened browser, no bound port). We deliberately do **not**
@@ -152,7 +153,7 @@ remediation guidance) rather than silently after ~1 minute via the daemon.
 -   **Action**: Capture the session's command history and outputs.
 -   **Storage**: Maintain a local JSON-L file of all major operations,
     executions, and stdin interactions in
-    `~/.config/colab-cli/history/<session_name>.jsonl`.
+    `<config_home>/history/<session_name>.jsonl`.
 -   **Viewing**: `colab log list` and `colab log show <session>`.
 -   **Conversion (Planned)**: Future expansion to convert history logs to
     `.ipynb` or `.html`.
@@ -194,7 +195,7 @@ remediation guidance) rather than silently after ~1 minute via the daemon.
     -   Compares the fetched version with the current CLI version using
         PEP 440 / semantic versioning, falling back to string equality when a
         version is unparseable.
-    -   Persists the following fields in `~/.config/colab-cli/settings.json`:
+    -   Persists the following fields in `<config_home>/settings.json`:
         -   `update_url`: source configuration.
         -   `last_check`: timestamp of the last fetch (drives the daily
             throttle).

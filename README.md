@@ -28,6 +28,12 @@
 >   all: it still held the quota, so `colab new` failed with "Allocation
 >   refused (precondition failed)". `colab stop --endpoint <endpoint>` now
 >   terminates by the endpoint that `colab sessions` already prints.
+> - **Two accounts side by side.** `token.json` was pinned to one absolute path
+>   while `--config` relocated only `sessions.json`, so there was no way to hold
+>   a personal and a work account at once — and pointing `--config` at a second
+>   account gave you *its* session names authenticated as the *first* account.
+>   `COLAB_CLI_HOME` now moves the whole directory: token, sessions, settings,
+>   log and history together. See [Usage Notes](#usage-notes).
 >
 > **Works on Windows:** `new` · `sessions` · `status` · `stop` · `exec` ·
 > `run` · `upload` · `download` · `ls` · `rm` · `install` · `log` · `version`.
@@ -182,7 +188,15 @@ colab stop -s analysis
 * **Machine shape:** Use `--high-mem` with `colab new`, `colab run`, or `colab ssh` (when auto-creating a runtime) to request a high-RAM machine shape. Requires Colab Pro or Pro+ entitlement for supported accelerators (CPU, T4, A100, etc.). L4 and TPU runtimes ignore this flag because they only offer one shape. Machine shape is shown in `colab sessions` and `colab status`.
 * **TTY Requirements:** The interactive commands `repl` and `console` require a local TTY. When running inside automated scripts or pipelines, make sure to pipe stdin (e.g., `echo "print(1)" | colab repl`) to trigger non-interactive execution modes.
 * **Transparent Code Execution:** When calling `colab exec -f file.py`, the CLI reads the file locally and transmits its content to the remote kernel. You do not need to manually upload files before execution.
-* **Storage & State Paths:** Session tokens and metadata are stored at `~/.config/colab-cli/sessions.json`. Global CLI settings are located at `~/.config/colab-cli/settings.json`. These can be customized or isolated via the global `--config` flag.
+* **Storage & State Paths:** Everything the CLI writes lives under `~/.config/colab-cli/`: cached credentials (`token.json`), session metadata (`sessions.json`), global settings (`settings.json`), the debug log (`colab.log`) and the per-session command history (`history/`). The global `--config` flag relocates `sessions.json` only.
+* **Multiple accounts:** Set `COLAB_CLI_HOME` to move that whole directory, which is what you want for keeping a personal and a work account side by side:
+
+  ```bash
+  COLAB_CLI_HOME=~/.config/colab-cli/work colab login
+  COLAB_CLI_HOME=~/.config/colab-cli/work colab sessions
+  ```
+
+  Read once at startup, so export it before the process runs. Prefer this over `--config` for account switching: `--config` moves the sessions while leaving the credentials behind, so the session names you get back belong to one account and the identity you get back belongs to another.
 
 ### Ephemeral Accelerator Jobs
 
